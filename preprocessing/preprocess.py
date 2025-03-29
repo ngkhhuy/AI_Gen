@@ -1,50 +1,30 @@
 import os
-import json
-import re
-from pycocotools.coco import COCO
+import torch
+import torchvision.transforms as transforms
+from torchvision.datasets import ImageFolder
+from torch.utils.data import DataLoader
 
-# Đường dẫn dataset
-DATASET_DIR = "F:/TTNT/dataset"
-ANNOTATION_FILE = os.path.join(DATASET_DIR, "annotations_trainval2017/annotations/captions_train2017.json")
-IMAGE_DIR = os.path.join(DATASET_DIR, "train2017")
+# Đường dẫn đến dataset raw
+RAW_DATASET_DIR = "TTNT/dataset/archive/raw-img"
+PROCESSED_DATASET_DIR = "TTNT/processed_images"
 
-# Kiểm tra file có tồn tại không
-if not os.path.exists(ANNOTATION_FILE):
-    raise FileNotFoundError(f"❌ Không tìm thấy file: {ANNOTATION_FILE}")
+# Tạo thư mục lưu ảnh đã xử lý nếu chưa có
+os.makedirs(PROCESSED_DATASET_DIR, exist_ok=True)
 
-print("✅ Tệp annotation tồn tại, bắt đầu load dữ liệu...")
+# Định nghĩa các biến đổi ảnh
+transform = transforms.Compose([
+    transforms.Resize((64, 64)),  # Resize về 64x64
+    transforms.ToTensor(),        # Chuyển thành tensor
+    transforms.Normalize((0.5,), (0.5,))  # Chuẩn hóa về [-1,1]
+])
 
-# Load COCO dataset
-coco = COCO(ANNOTATION_FILE)
+# Load dataset
+dataset = ImageFolder(root=RAW_DATASET_DIR, transform=transform)
+dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-# Lấy danh sách ID của hình ảnh
-image_ids = coco.getImgIds()
+# Lưu ảnh đã xử lý dưới dạng tensor
+for i, (images, _) in enumerate(dataloader):
+    for j, image in enumerate(images):
+        torch.save(image, os.path.join(PROCESSED_DATASET_DIR, f"image_{i*32+j}.pt"))
 
-# Ánh xạ hình ảnh với chú thích
-image_caption_mapping = {}
-
-for img_id in image_ids:
-    img_info = coco.loadImgs(img_id)[0]
-    ann_ids = coco.getAnnIds(imgIds=img_id)
-    annotations = coco.loadAnns(ann_ids)
-
-    captions = [ann['caption'] for ann in annotations]
-    image_caption_mapping[img_info['file_name']] = captions
-
-print(f"✅ Đã tải {len(image_caption_mapping)} ảnh và chú thích.")
-
-def clean_caption(caption):
-    caption = caption.lower()  # Chuyển thành chữ thường
-    caption = re.sub(r"[^a-zA-Z\s]", "", caption)  # Xóa ký tự đặc biệt
-    caption = re.sub(r"\s+", " ", caption).strip()  # Xóa khoảng trắng thừa
-    return caption
-
-# Áp dụng tiền xử lý lên toàn bộ chú thích
-cleaned_captions = {img: [clean_caption(cap) for cap in captions] for img, captions in image_caption_mapping.items()}
-
-# Lưu lại file sau khi làm sạch
-CLEANED_OUTPUT_FILE = os.path.join(DATASET_DIR, "annotations_trainval2017", "cleaned_captions.json")
-with open(CLEANED_OUTPUT_FILE, "w", encoding="utf-8") as f:
-    json.dump(cleaned_captions, f, indent=4, ensure_ascii=False)
-
-print(f"✅ Dữ liệu đã được làm sạch và lưu tại: {CLEANED_OUTPUT_FILE}")
+print(f"✅ Đã tiền xử lý xong {len(dataset)} ảnh và lưu vào {PROCESSED_DATASET_DIR}")
